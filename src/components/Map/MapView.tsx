@@ -1,7 +1,7 @@
 'use client';
 
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 
 import Map, { Marker, NavigationControl, Source, Layer, MapRef, ViewStateChangeEvent } from 'react-map-gl/mapbox';
 
@@ -27,6 +27,38 @@ export default function MapView({ businesses, selectedSector, onBusinessSelect }
         bearing: 0
     });
 
+
+    useEffect(() => {
+        if (selectedSector && mapRef.current) {
+            const coords = SECTOR_POLYGONS[selectedSector];
+            if (coords && coords.length > 0) {
+                // Approximate center of polygon
+                const lngs = coords.map(c => c[0]);
+                const lats = coords.map(c => c[1]);
+                const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+                const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+
+                mapRef.current.flyTo({
+                    center: [centerLng, centerLat],
+                    zoom: 16.5,
+                    duration: 2000,
+                    essential: true
+                });
+            }
+        } else if (!selectedSector && mapRef.current) {
+            mapRef.current.flyTo({
+                center: [MONTANITA_CENTER.lng, MONTANITA_CENTER.lat],
+                zoom: MONTANITA_CENTER.zoom,
+                duration: 1500
+            });
+        }
+    }, [selectedSector]);
+
+    useEffect(() => {
+        if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
+            console.error('MAPBOX_TOKEN is missing in environment variables!');
+        }
+    }, []);
 
     // GeoJSON for Businesses (Clustering)
     const businessesGeojson = useMemo(() => ({
@@ -159,15 +191,12 @@ export default function MapView({ businesses, selectedSector, onBusinessSelect }
         <div className="relative w-full h-[60vh] rounded-3xl overflow-hidden shadow-2xl border-4 border-slate-800/50 group">
             <Map
                 {...viewState}
-
-
                 onMove={(evt: ViewStateChangeEvent) => setViewState(evt.viewState)}
-
-
                 mapStyle="mapbox://styles/mapbox/dark-v11"
                 mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}
                 ref={mapRef}
-                style={{ width: '100%', height: '100%' }}
+                style={{ width: '100%', height: '100%', borderRadius: '1.5rem' }}
+                reuseMaps={true}
             >
                 <Source id="sectors" type="geojson" data={sectorsGeojson}>
                     <Layer {...sectorFillLayer} />

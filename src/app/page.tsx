@@ -1,14 +1,15 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import SectorFilter from '@/components/Map/SectorFilter';
 import EventWizard from '@/components/Dashboard/EventWizard';
 import BusinessDashboard from '@/components/Dashboard/BusinessDashboard';
 import Login from '@/components/Auth/Login';
 import { useAuth } from '@/context/AuthContext';
-import { Sector, Business } from '@/types';
+import { Sector, Business, MontanitaEvent } from '@/types';
+import EventList from '@/components/Events/EventList';
 import { SECTOR_INFO } from '@/constants';
 import { Search, Calendar, Heart, User, Map as MapIcon, Sparkles, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -72,17 +73,53 @@ export default function Home() {
   const [rsvped, setRsvped] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('explore');
   const [showWizard, setShowWizard] = useState(false);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [events, setEvents] = useState<MontanitaEvent[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const { user } = useAuth();
 
+  useEffect(() => {
+    async function initData() {
+      setLoading(true);
+      const { supabaseApi } = await import('@/services/supabase');
+      const { getMontanitaDayRange } = await import('@/utils/dateUtils');
+
+      const [busRes, evtRes] = await Promise.all([
+        supabaseApi.getBusinessesBySector(selectedSector),
+        supabaseApi.getEvents(selectedSector)
+      ]);
+
+      if (busRes.data) setBusinesses(busRes.data as any);
+
+      if (evtRes.data) {
+        const { start, end } = getMontanitaDayRange(new Date());
+        // Filter for local night logic
+        const currentEvents = (evtRes.data as any[]).filter(e => {
+          const evtStart = new Date(e.start_at);
+          return evtStart >= start && evtStart <= end;
+        });
+        setEvents(currentEvents as any);
+      }
+
+      const saved = localStorage.getItem('montanita-pulse-rsvps');
+      if (saved) setRsvped(JSON.parse(saved));
+      setLoading(false);
+    }
+    initData();
+  }, [selectedSector]);
+
   const toggleRSVP = (id: string) => {
-    setRsvped(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    setRsvped(prev => {
+      const next = prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id];
+      localStorage.setItem('montanita-pulse-rsvps', JSON.stringify(next));
+      return next;
+    });
   };
 
-  const filteredBusinesses = mockBusinesses.filter(b => {
-    const sectorMatch = !selectedSector || b.sector_id === selectedSector;
-    const vibeMatch = !selectedVibe || b.category_id.toLowerCase().includes(selectedVibe.toLowerCase());
-    return sectorMatch && vibeMatch;
+  const filteredBusinesses = businesses.filter(b => {
+    const vibeMatch = !selectedVibe || b.category_id?.toLowerCase().includes(selectedVibe.toLowerCase());
+    return vibeMatch;
   });
 
   return (
@@ -144,48 +181,12 @@ export default function Home() {
                 <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
                 En Vivo Ahora
               </h2>
-              <div className="flex flex-col gap-4">
-                {filteredBusinesses.map(b => (
-                  <motion.div
-                    key={b.id}
-                    whileHover={{ x: 5 }}
-                    className="p-4 bg-slate-900/40 border border-white/5 rounded-3xl flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="relative">
-                        <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-800 border border-white/10">
-                          <img src={b.image_url} alt={b.name} className="w-full h-full object-cover" />
-                        </div>
-                        {b.is_verified && (
-                          <div className="absolute -top-1 -right-1 bg-cyan-500 rounded-full p-1 border-2 border-black shadow-lg">
-                            <Check className="w-3 h-3 text-white font-black" />
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-base">{b.name}</h4>
-                          <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-800 border border-white/5`} style={{ color: SECTOR_INFO[b.sector_id as Sector].color }}>
-                            {SECTOR_INFO[b.sector_id as Sector].name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-slate-500">{b.address}</span>
-                          <span className="w-1 h-1 rounded-full bg-slate-700" />
-                          <span className="text-[10px] text-rose-500 font-bold uppercase tracking-wider">🔥 12 hoy</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => toggleRSVP(b.id)}
-                      className={`p-3 rounded-2xl group transition-all ${rsvped.includes(b.id) ? 'bg-rose-500/20' : 'bg-white/5 hover:bg-white/10'}`}
-                    >
-                      <Heart className={`w-5 h-5 transition-colors ${rsvped.includes(b.id) ? 'text-rose-500 fill-rose-500' : 'text-slate-500 group-hover:text-slate-300'}`} />
-                    </button>
-                  </motion.div>
-                ))}
-              </div>
+              <EventList
+                events={events}
+                rsvped={rsvped}
+                onToggleRSVP={toggleRSVP}
+                loading={loading}
+              />
             </div>
 
             <div className="mt-8 px-6">

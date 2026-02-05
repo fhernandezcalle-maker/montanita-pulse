@@ -13,6 +13,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Montañita Pulse | Vive la Vibra",
   description: "Conecta con la mejor oferta de Montañita: fiesta, surf y bienestar.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Montañita Pulse",
+  },
 };
 
 export const viewport = {
@@ -20,6 +25,7 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: "#050505",
 };
 
 
