@@ -68,9 +68,9 @@ export default function CalendarView() {
                     plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                     initialView="timeGridDay"
                     headerToolbar={{
-                        left: 'prev,next',
+                        left: 'prev,next today',
                         center: 'title',
-                        right: 'timeGridDay,timeGridWeek'
+                        right: 'timeGridDay,timeGridWeek,dayGridMonth'
                     }}
                     editable={false}
                     selectable={true}

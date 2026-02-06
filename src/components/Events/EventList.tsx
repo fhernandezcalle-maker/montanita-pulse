@@ -79,10 +79,20 @@ export default function EventList({ events, rsvped, onToggleRSVP, loading }: Eve
                                     <Clock className="w-3 h-3" />
                                     {format(new Date(event.start_at), "HH:mm 'hs'", { locale: es })}
                                 </div>
+                                {event.is_recurring && (
+                                    <span className="text-[9px] font-black bg-cyan-500/10 text-cyan-500 px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                                        🔄 Recurrente
+                                    </span>
+                                )}
                                 <span className="w-1 h-1 rounded-full bg-slate-700 hidden sm:block" />
-                                <span className="text-[10px] text-rose-500 font-black uppercase tracking-widest">
+                                <motion.span
+                                    key={event.interested_count + (rsvped.includes(event.id) ? 1 : 0)}
+                                    initial={{ scale: 1.2 }}
+                                    animate={{ scale: 1 }}
+                                    className="text-[10px] text-rose-500 font-black uppercase tracking-widest"
+                                >
                                     {event.interested_count + (rsvped.includes(event.id) ? 1 : 0)} asistiendo
-                                </span>
+                                </motion.span>
                             </div>
                         </div>
                     </div>

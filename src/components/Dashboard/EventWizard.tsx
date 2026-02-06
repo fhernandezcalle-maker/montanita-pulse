@@ -21,42 +21,65 @@ export default function EventWizard() {
     const [selectedVibe, setSelectedVibe] = useState('Fiesta');
 
     const handlePublish = async () => {
-        if (!user) return;
         setLoading(true);
 
         const supabase = getSupabase();
+        const userId = user?.id || null;
 
         try {
             // 1. Find or create a business for this host in the selected sector
-            let { data: business } = await supabase
-                .from('businesses')
-                .select('id')
-                .eq('owner_id', user.id)
-                .eq('sector_id', selectedSector)
-                .maybeSingle();
+            let business: { id: string } | null = null;
+
+            if (userId) {
+                const { data: existingBusiness, error: findError } = await supabase
+                    .from('businesses')
+                    .select('id')
+                    .eq('owner_id', userId)
+                    .eq('sector_id', selectedSector)
+                    .maybeSingle();
+
+                if (findError) {
+                    console.error('Error searching business:', findError);
+                }
+                business = existingBusiness;
+            }
 
             if (!business) {
+                const businessName = user?.email
+                    ? `Local de ${user.email.split('@')[0]}`
+                    : `Local Anónimo`;
+
                 const { data: newBus, error: busError } = await supabase
                     .from('businesses')
                     .insert({
-                        name: `Local de ${user.email?.split('@')[0]}`,
+                        name: businessName,
                         sector_id: selectedSector,
                         category_id: category.toLowerCase(),
                         location_lat: SECTOR_INFO[selectedSector].center?.[1] || MONTANITA_CENTER.lat,
                         location_lng: SECTOR_INFO[selectedSector].center?.[0] || MONTANITA_CENTER.lng,
-                        owner_id: user.id,
+                        owner_id: userId,
                         address: SECTOR_INFO[selectedSector].name,
-                        description: `Un rincón vibra en ${SECTOR_INFO[selectedSector].name}`
+                        description: `Un rincón con buena vibra en ${SECTOR_INFO[selectedSector].name}`
                     })
                     .select()
                     .single();
 
-                if (busError) throw busError;
+                if (busError) {
+                    console.error('Error creating business:', busError);
+                    throw new Error(`Error creando local: ${busError.message}`);
+                }
                 business = newBus;
             }
 
             // 2. Insert the event
             if (business && business.id) {
+                // Generate RRule if recurring
+                const rrule = frequency === 'Diario'
+                    ? 'FREQ=DAILY;UNTIL=' + new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+                    : frequency === 'Semanal'
+                        ? 'FREQ=WEEKLY;UNTIL=' + new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+                        : null;
+
                 const { error: eventError } = await supabase
                     .from('events')
                     .insert({
@@ -68,16 +91,20 @@ export default function EventWizard() {
                         category_id: category.toLowerCase(),
                         vibe_tags: [selectedVibe],
                         is_recurring: frequency !== 'No',
+                        rrule: rrule,
                         sector_id: selectedSector,
                         interested_count: 0
                     });
 
-                if (eventError) throw eventError;
+                if (eventError) {
+                    console.error('Error creating event:', eventError);
+                    throw eventError;
+                }
                 setStep(3);
             }
-        } catch (error) {
-            console.error('Error publishing event:', error);
-            alert('Error al publicar el evento.');
+        } catch (error: any) {
+            console.error('Full connection error details:', error);
+            alert(`Error al publicar: ${error.message || 'Error desconocido'}`);
         } finally {
             setLoading(false);
         }
@@ -180,6 +207,25 @@ export default function EventWizard() {
                                 <Image className="w-6 h-6 text-slate-500" />
                             </div>
                             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Subir Flyer</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">¿Se repite?</label>
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    { id: 'No', label: 'Una vez' },
+                                    { id: 'Diario', label: 'Diario' },
+                                    { id: 'Semanal', label: 'Semanal' }
+                                ].map(f => (
+                                    <button
+                                        key={f.id}
+                                        onClick={() => setFrequency(f.id)}
+                                        className={`px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${frequency === f.id ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'bg-slate-800/50 text-slate-500 hover:text-slate-300'}`}
+                                    >
+                                        {f.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </motion.div>
                 )}
