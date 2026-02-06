@@ -39,7 +39,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const fetchProfile = async (userId: string) => {
+    const fetchProfile = async (userId: string, userObj?: any) => {
         const supabase = getSupabase();
         const { data, error } = await supabase
             .from('user_profiles')
@@ -47,13 +47,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             .eq('id', userId)
             .maybeSingle();
 
-        if (data) {
-            setProfile(data as UserProfile);
-        } else {
+        let profileData = data;
+
+        if (!profileData) {
             // If no profile exists, create one with default role
             // This handles users created before the profile system
-            const role = user?.user_metadata?.role || 'visitor';
-            const displayName = user?.user_metadata?.display_name || user?.email?.split('@')[0];
+            const role = userObj?.user_metadata?.role || 'visitor';
+            const displayName = userObj?.user_metadata?.display_name || userObj?.email?.split('@')[0];
 
             const { data: newProfile } = await supabase
                 .from('user_profiles')
@@ -65,8 +65,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 .select()
                 .single();
 
-            if (newProfile) {
-                setProfile(newProfile as UserProfile);
+            profileData = newProfile;
+        }
+
+        if (profileData) {
+            setProfile(profileData as UserProfile);
+
+            // If business role, check if business exists - create if not
+            if (profileData.role === 'business') {
+                const { data: businesses } = await supabase
+                    .from('businesses')
+                    .select('id')
+                    .eq('owner_id', userId)
+                    .limit(1);
+
+                if (!businesses || businesses.length === 0) {
+                    // Create default business
+                    await supabase
+                        .from('businesses')
+                        .insert({
+                            name: profileData.display_name || 'Mi Negocio',
+                            owner_id: userId,
+                            sector_id: 'centro',
+                            description: 'Descripción pendiente'
+                        });
+                }
             }
         }
     };
@@ -78,7 +101,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         supabase.auth.getSession().then(async ({ data: { session } }) => {
             setUser(session?.user ?? null);
             if (session?.user) {
-                await fetchProfile(session.user.id);
+                await fetchProfile(session.user.id, session.user);
             }
             setLoading(false);
         });
@@ -87,7 +110,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             setUser(session?.user ?? null);
             if (session?.user) {
-                await fetchProfile(session.user.id);
+                await fetchProfile(session.user.id, session.user);
             } else {
                 setProfile(null);
             }

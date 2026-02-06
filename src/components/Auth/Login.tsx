@@ -32,7 +32,7 @@ const roleConfig = {
 };
 
 export default function Login() {
-    const { signIn } = useAuth();
+    const { user } = useAuth();
     const [mode, setMode] = useState<AuthMode>('login');
     const [step, setStep] = useState(1); // 1: role select, 2: credentials
     const [selectedRole, setSelectedRole] = useState<UserRole>('visitor');
@@ -76,35 +76,31 @@ export default function Login() {
                 if (signUpError) throw signUpError;
 
                 if (data.user) {
-                    // Create user profile with role
-                    const { error: profileError } = await supabase
-                        .from('user_profiles')
-                        .upsert({
-                            id: data.user.id,
-                            role: selectedRole,
-                            display_name: displayName
-                        });
+                    // Create user profile with role - use setTimeout to avoid abort
+                    setTimeout(async () => {
+                        try {
+                            await supabase
+                                .from('user_profiles')
+                                .upsert({
+                                    id: data.user!.id,
+                                    role: selectedRole,
+                                    display_name: displayName
+                                });
+                        } catch (e) {
+                            console.log('Profile will be created on first login');
+                        }
+                    }, 100);
 
-                    if (profileError) {
-                        console.error('Profile creation error:', profileError);
-                    }
-
-                    // If business role, create a business entry
-                    if (selectedRole === 'business') {
-                        await supabase
-                            .from('businesses')
-                            .insert({
-                                name: displayName || 'Mi Negocio',
-                                owner_id: data.user.id,
-                                sector_id: 'centro',
-                                description: 'Descripción pendiente'
-                            });
-                    }
-
-                    setSuccess('¡Cuenta creada! Revisa tu email para confirmar.');
+                    setSuccess('¡Cuenta creada! Ya puedes iniciar sesión.');
+                    // Switch to login mode after successful registration
+                    setTimeout(() => {
+                        setMode('login');
+                        setStep(1);
+                    }, 2000);
                 }
             }
         } catch (err: any) {
+            console.error('Auth error:', err);
             setError(err.message || 'Error de autenticación');
         } finally {
             setLoading(false);
@@ -175,8 +171,8 @@ export default function Login() {
                                             key={role}
                                             onClick={() => setSelectedRole(role)}
                                             className={`w-full p-4 rounded-2xl border-2 transition-all flex items-center gap-4 ${isSelected
-                                                    ? `border-${config.color}-500 bg-${config.color}-500/10`
-                                                    : 'border-slate-800 hover:border-slate-700'
+                                                ? `border-${config.color}-500 bg-${config.color}-500/10`
+                                                : 'border-slate-800 hover:border-slate-700'
                                                 }`}
                                             style={{
                                                 borderColor: isSelected
