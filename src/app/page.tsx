@@ -26,6 +26,11 @@ const CalendarView = dynamic(() => import('@/components/Calendar/CalendarView'),
   loading: () => <div className="w-full h-[400px] bg-slate-900 animate-pulse rounded-3xl" />
 });
 
+const AgendaView = dynamic(() => import('@/components/Agenda/AgendaView'), {
+  ssr: false,
+  loading: () => <div className="w-full h-[400px] bg-slate-900 animate-pulse rounded-3xl" />
+});
+
 // Temporary mock data until DB is connected
 const mockBusinesses: Business[] = [
   {
@@ -251,7 +256,7 @@ export default function Home() {
             exit={{ opacity: 0, y: 20 }}
             className="px-4"
           >
-            <CalendarView />
+            <AgendaView />
           </motion.div>
         )}
 

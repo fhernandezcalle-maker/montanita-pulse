@@ -1,20 +1,26 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { Plus, Eye, Users, Calendar, MoreVertical, Edit3, Loader2 } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Eye, Users, Calendar, Edit3, Trash2, Camera, Check, X, Loader2 } from 'lucide-react';
 import { getSupabase } from '@/services/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { SECTOR_INFO } from '@/constants';
+import { Sector } from '@/types';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
-interface Publication {
+interface EventPublication {
     id: string;
     title: string;
-    date: string;
-    rsvps: number;
-    views: number;
-    status: 'active' | 'scheduled' | 'ended';
-    image: string;
+    description: string;
+    start_at: string;
+    end_at: string;
+    interested_count: number;
+    image_url: string;
+    sector_id: string;
+    is_recurring: boolean;
 }
 
 interface BusinessDashboardProps {
@@ -23,61 +29,159 @@ interface BusinessDashboardProps {
 
 export default function BusinessDashboard({ onCreateEvent }: BusinessDashboardProps) {
     const { user } = useAuth();
-    const [publications, setPublications] = useState<Publication[]>([]);
+    const [publications, setPublications] = useState<EventPublication[]>([]);
     const [loading, setLoading] = useState(true);
-    const [stats, setStats] = useState({ rsvps: 0, views: 0 });
+    const [stats, setStats] = useState({ rsvps: 0, events: 0 });
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editTitle, setEditTitle] = useState('');
+    const [editDescription, setEditDescription] = useState('');
+    const [saving, setSaving] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [uploadingId, setUploadingId] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!user) return;
-
-        async function loadDashboardData() {
-            const supabase = getSupabase();
-
-            // 1. Get business of the user
-            const { data: business } = await supabase
-                .from('businesses')
-                .select('id')
-                .eq('owner_id', user?.id)
-                .single();
-
-            if (!business) {
-                setLoading(false);
-                return;
-            }
-
-            // 2. Get events for this business
-            const { data: events, error } = await supabase
-                .from('events')
-                .select('*')
-                .eq('business_id', business.id)
-                .order('start_at', { ascending: false });
-
-            if (error) {
-                console.error('Error loading dashboard events:', error);
-            } else if (events) {
-                const formattedPubs = events.map(event => ({
-                    id: event.id,
-                    title: event.title,
-                    date: new Date(event.start_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
-                    rsvps: event.interested_count || 0,
-                    views: Math.floor(Math.random() * 500) + 100, // Dummy views for now
-                    status: new Date(event.end_at) < new Date() ? 'ended' :
-                        new Date(event.start_at) <= new Date() ? 'active' : 'scheduled',
-                    image: event.image_url || 'https://images.unsplash.com/photo-1541339907198-e08756ebafe3?q=80&w=400'
-                })) as Publication[];
-
-                setPublications(formattedPubs);
-
-                // Calculate stats
-                const totalRsvps = formattedPubs.reduce((acc, p) => acc + p.rsvps, 0);
-                const totalViews = formattedPubs.reduce((acc, p) => acc + p.views, 0);
-                setStats({ rsvps: totalRsvps, views: totalViews });
-            }
-            setLoading(false);
-        }
-
         loadDashboardData();
     }, [user]);
+
+    async function loadDashboardData() {
+        if (!user) {
+            setLoading(false);
+            return;
+        }
+
+        const supabase = getSupabase();
+
+        // Get business of the user
+        const { data: business } = await supabase
+            .from('businesses')
+            .select('id')
+            .eq('owner_id', user.id)
+            .single();
+
+        if (!business) {
+            setLoading(false);
+            return;
+        }
+
+        // Get events for this business
+        const { data: events, error } = await supabase
+            .from('events')
+            .select('*')
+            .eq('business_id', business.id)
+            .order('start_at', { ascending: false });
+
+        if (error) {
+            console.error('Error loading events:', error);
+        } else if (events) {
+            setPublications(events);
+            const totalRsvps = events.reduce((acc, e) => acc + (e.interested_count || 0), 0);
+            setStats({ rsvps: totalRsvps, events: events.length });
+        }
+        setLoading(false);
+    }
+
+    const handleEdit = (event: EventPublication) => {
+        setEditingId(event.id);
+        setEditTitle(event.title);
+        setEditDescription(event.description || '');
+    };
+
+    const handleSave = async () => {
+        if (!editingId) return;
+        setSaving(true);
+
+        const supabase = getSupabase();
+        const { error } = await supabase
+            .from('events')
+            .update({
+                title: editTitle,
+                description: editDescription
+            })
+            .eq('id', editingId);
+
+        if (error) {
+            alert('Error al guardar: ' + error.message);
+        } else {
+            setPublications(prev => prev.map(p =>
+                p.id === editingId
+                    ? { ...p, title: editTitle, description: editDescription }
+                    : p
+            ));
+            setEditingId(null);
+        }
+        setSaving(false);
+    };
+
+    const handleDelete = async (eventId: string) => {
+        if (!confirm('¿Eliminar este evento?')) return;
+
+        const supabase = getSupabase();
+        const { error } = await supabase
+            .from('events')
+            .delete()
+            .eq('id', eventId);
+
+        if (error) {
+            alert('Error al eliminar: ' + error.message);
+        } else {
+            setPublications(prev => prev.filter(p => p.id !== eventId));
+            setStats(prev => ({ ...prev, events: prev.events - 1 }));
+        }
+    };
+
+    const handleImageUpload = async (eventId: string, file: File) => {
+        setUploadingId(eventId);
+        const supabase = getSupabase();
+
+        const fileExt = file.name.split('.').pop();
+        const fileName = `event-${eventId}-${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('event-images')
+            .upload(fileName, file);
+
+        if (uploadError) {
+            // If bucket doesn't exist, use a placeholder
+            console.error('Upload error:', uploadError);
+            alert('Error subiendo imagen. Verifica que el bucket "event-images" existe en Supabase Storage.');
+            setUploadingId(null);
+            return;
+        }
+
+        const { data: urlData } = supabase.storage
+            .from('event-images')
+            .getPublicUrl(fileName);
+
+        const { error: updateError } = await supabase
+            .from('events')
+            .update({ image_url: urlData.publicUrl })
+            .eq('id', eventId);
+
+        if (!updateError) {
+            setPublications(prev => prev.map(p =>
+                p.id === eventId ? { ...p, image_url: urlData.publicUrl } : p
+            ));
+        }
+        setUploadingId(null);
+    };
+
+    const getStatusBadge = (event: EventPublication) => {
+        const now = new Date();
+        const start = new Date(event.start_at);
+        const end = new Date(event.end_at);
+
+        if (now > end) return { label: 'Terminado', color: 'bg-slate-500' };
+        if (now >= start && now <= end) return { label: 'En vivo', color: 'bg-emerald-500' };
+        return { label: 'Próximo', color: 'bg-amber-500' };
+    };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -92,89 +196,156 @@ export default function BusinessDashboard({ onCreateEvent }: BusinessDashboardPr
                 </div>
                 <div className="bg-slate-900/50 border border-white/5 p-6 rounded-3xl">
                     <div className="w-10 h-10 bg-cyan-500/10 rounded-xl flex items-center justify-center mb-4">
-                        <Eye className="w-5 h-5 text-cyan-500" />
+                        <Calendar className="w-5 h-5 text-cyan-500" />
                     </div>
-                    <p className="text-2xl font-black">{(stats.views / 1000).toFixed(1)}k</p>
-                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Visitas</p>
+                    <p className="text-2xl font-black">{stats.events}</p>
+                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Eventos</p>
                 </div>
             </div>
 
-            {/* Header & Action */}
-            <div className="flex justify-between items-center">
-                <div>
-                    <h2 className="text-xl font-black">Mis Publicaciones</h2>
-                    <p className="text-slate-500 text-xs">Gestiona tus eventos en vivo</p>
-                </div>
-                <button
-                    onClick={onCreateEvent}
-                    className="w-12 h-12 bg-white text-black rounded-2xl flex items-center justify-center shadow-xl shadow-white/5 active:scale-90 transition-all"
-                >
-                    <Plus className="w-6 h-6" />
-                </button>
-            </div>
+            {/* Create New Button */}
+            <button
+                onClick={onCreateEvent}
+                className="w-full py-4 bg-gradient-to-r from-rose-500 to-amber-500 rounded-2xl font-black text-white flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-rose-500/20"
+            >
+                <Plus className="w-5 h-5" />
+                Crear Nuevo Evento
+            </button>
 
-            {/* Publications List */}
+            {/* Events List */}
             <div className="space-y-4">
-                {loading ? (
-                    <div className="flex justify-center py-12">
-                        <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
-                    </div>
-                ) : publications.length === 0 ? (
-                    <div className="py-12 text-center bg-slate-900/40 rounded-3xl border border-dashed border-slate-800">
-                        <Calendar className="w-10 h-10 text-slate-700 mx-auto mb-4" />
-                        <p className="text-slate-500 text-sm font-bold">No has publicado eventos aún.</p>
-                        <button onClick={onCreateEvent} className="text-rose-500 text-xs mt-2 hover:underline">¡Crea tu primer evento ahora!</button>
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
+                    Mis Publicaciones ({publications.length})
+                </h3>
+
+                {publications.length === 0 ? (
+                    <div className="text-center py-12 bg-slate-900/30 rounded-3xl border border-dashed border-slate-800">
+                        <p className="text-slate-500 text-sm">Aún no tienes eventos publicados</p>
                     </div>
                 ) : (
-                    publications.map((pub, i) => (
-                        <motion.div
-                            key={pub.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: i * 0.1 }}
-                            className="bg-slate-900/80 border border-white/5 rounded-3xl p-4 flex gap-4 items-center group relative overflow-hidden"
-                        >
-                            <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 bg-slate-800 border border-white/5">
-                                <img src={pub.image} alt={pub.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                            </div>
+                    <AnimatePresence>
+                        {publications.map((event, idx) => {
+                            const status = getStatusBadge(event);
+                            const isEditing = editingId === event.id;
 
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className={`w-2 h-2 rounded-full ${pub.status === 'active' ? 'bg-emerald-500 animate-pulse' : pub.status === 'scheduled' ? 'bg-amber-500' : 'bg-slate-600'}`} />
-                                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                                        {pub.status === 'active' ? 'En Vivo' : pub.status === 'scheduled' ? 'Programado' : 'Finalizado'}
-                                    </span>
-                                </div>
-                                <h3 className="font-bold text-sm truncate pr-8">{pub.title}</h3>
-                                <div className="flex items-center gap-3 mt-2 text-slate-500">
-                                    <div className="flex items-center gap-1">
-                                        <Calendar className="w-3 h-3" />
-                                        <span className="text-[10px] whitespace-nowrap">{pub.date}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 text-rose-500">
-                                        <Users className="w-3 h-3" />
-                                        <span className="text-[10px] font-black">{pub.rsvps}</span>
-                                    </div>
-                                </div>
-                            </div>
+                            return (
+                                <motion.div
+                                    key={event.id}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, x: -100 }}
+                                    transition={{ delay: idx * 0.05 }}
+                                    className="bg-slate-900/50 border border-white/5 rounded-3xl overflow-hidden hover:border-white/10 transition-all"
+                                >
+                                    <div className="flex">
+                                        {/* Event Image */}
+                                        <div className="relative w-28 h-28 flex-shrink-0 group">
+                                            <img
+                                                src={event.image_url || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=200'}
+                                                alt={event.title}
+                                                className="w-full h-full object-cover"
+                                            />
+                                            <label className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                                {uploadingId === event.id ? (
+                                                    <Loader2 className="w-6 h-6 text-white animate-spin" />
+                                                ) : (
+                                                    <Camera className="w-6 h-6 text-white" />
+                                                )}
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (file) handleImageUpload(event.id, file);
+                                                    }}
+                                                    className="hidden"
+                                                />
+                                            </label>
+                                            <span className={`absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold text-white ${status.color}`}>
+                                                {status.label}
+                                            </span>
+                                        </div>
 
-                            <button className="p-2 hover:bg-white/5 rounded-xl transition-colors">
-                                <MoreVertical className="w-5 h-5 text-slate-500" />
-                            </button>
-                        </motion.div>
-                    ))
+                                        {/* Event Details */}
+                                        <div className="flex-1 p-4 flex flex-col justify-between">
+                                            {isEditing ? (
+                                                <div className="space-y-2">
+                                                    <input
+                                                        type="text"
+                                                        value={editTitle}
+                                                        onChange={(e) => setEditTitle(e.target.value)}
+                                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white"
+                                                    />
+                                                    <textarea
+                                                        value={editDescription}
+                                                        onChange={(e) => setEditDescription(e.target.value)}
+                                                        rows={2}
+                                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white resize-none"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <h4 className="font-bold text-white truncate">{event.title}</h4>
+                                                        {event.is_recurring && (
+                                                            <span className="text-[9px] font-bold bg-cyan-500/20 text-cyan-500 px-2 py-0.5 rounded-full">
+                                                                🔄
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight mt-1">
+                                                        {format(new Date(event.start_at), "d MMM 'a las' HH:mm", { locale: es })}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            <div className="flex items-center justify-between mt-2">
+                                                <span className="text-[10px] text-rose-500 font-bold">
+                                                    ❤️ {event.interested_count} interesados
+                                                </span>
+
+                                                <div className="flex gap-1">
+                                                    {isEditing ? (
+                                                        <>
+                                                            <button
+                                                                onClick={handleSave}
+                                                                disabled={saving}
+                                                                className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                                                            >
+                                                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setEditingId(null)}
+                                                                className="p-1.5 rounded-lg bg-white/5 text-slate-400 hover:bg-white/10"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleEdit(event)}
+                                                                className="p-1.5 rounded-lg bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                                                            >
+                                                                <Edit3 className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDelete(event.id)}
+                                                                className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </AnimatePresence>
                 )}
-            </div>
-
-            {/* Hint */}
-            <div className="p-6 bg-gradient-to-tr from-rose-500/10 to-amber-500/10 border border-rose-500/10 rounded-3xl">
-                <h4 className="font-bold text-sm flex items-center gap-2 mb-2 text-rose-500">
-                    <Edit3 className="w-4 h-4" />
-                    Tip del Día
-                </h4>
-                <p className="text-slate-400 text-xs leading-relaxed">
-                    Las publicaciones con fotos reales de tu local tienen un 40% más de interés. ¡Sube una hoy!
-                </p>
             </div>
         </div>
     );

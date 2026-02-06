@@ -104,7 +104,8 @@ export default function EventWizard() {
             }
         } catch (error: any) {
             console.error('Full connection error details:', error);
-            alert(`Error al publicar: ${error.message || 'Error desconocido'}`);
+            const errorMsg = error?.message || error?.code || JSON.stringify(error) || 'Error desconocido';
+            alert(`Error: ${errorMsg}`);
         } finally {
             setLoading(false);
         }
