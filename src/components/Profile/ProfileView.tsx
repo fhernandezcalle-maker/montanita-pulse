@@ -3,13 +3,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Store, Camera, Edit2, Trash2, Save, X, LogOut, Check } from 'lucide-react';
+import { User, Store, Shield, Camera, Edit2, Trash2, Save, X, LogOut, Check, Users, Calendar, BarChart3, Settings } from 'lucide-react';
 import { getSupabase } from '@/services/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { SECTOR_INFO } from '@/constants';
 import { Sector } from '@/types';
-
-type UserType = 'visitor' | 'business';
 
 interface BusinessProfile {
     id: string;
@@ -22,48 +20,74 @@ interface BusinessProfile {
     is_verified: boolean;
 }
 
+interface AdminStats {
+    totalUsers: number;
+    totalBusinesses: number;
+    totalEvents: number;
+    pendingVerifications: number;
+}
+
 export default function ProfileView() {
-    const { user, signOut } = useAuth();
-    const [userType, setUserType] = useState<UserType>('visitor');
+    const { user, profile, isAdmin, isBusiness, signOut, refreshProfile } = useAuth();
     const [business, setBusiness] = useState<BusinessProfile | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
 
     // Edit form state
     const [editName, setEditName] = useState('');
     const [editDescription, setEditDescription] = useState('');
     const [editSector, setEditSector] = useState<Sector>(Sector.CENTRO);
-    const [editCategory, setEditCategory] = useState('bar');
     const [editAddress, setEditAddress] = useState('');
 
     useEffect(() => {
         if (user) {
-            loadProfile();
+            loadData();
         } else {
             setLoading(false);
         }
-    }, [user]);
+    }, [user, profile]);
 
-    const loadProfile = async () => {
+    const loadData = async () => {
         if (!user) return;
 
         const supabase = getSupabase();
-        const { data, error } = await supabase
-            .from('businesses')
-            .select('*')
-            .eq('owner_id', user.id)
-            .maybeSingle();
 
-        if (data) {
-            setBusiness(data);
-            setUserType('business');
-            setEditName(data.name);
-            setEditDescription(data.description || '');
-            setEditSector(data.sector_id as Sector);
-            setEditCategory(data.category_id || 'bar');
-            setEditAddress(data.address || '');
+        // Load business if user is business or admin
+        if (isBusiness) {
+            const { data } = await supabase
+                .from('businesses')
+                .select('*')
+                .eq('owner_id', user.id)
+                .maybeSingle();
+
+            if (data) {
+                setBusiness(data);
+                setEditName(data.name);
+                setEditDescription(data.description || '');
+                setEditSector(data.sector_id as Sector);
+                setEditAddress(data.address || '');
+            }
         }
+
+        // Load admin stats
+        if (isAdmin) {
+            const [usersRes, businessesRes, eventsRes, verificationsRes] = await Promise.all([
+                supabase.from('user_profiles').select('id', { count: 'exact' }),
+                supabase.from('businesses').select('id', { count: 'exact' }),
+                supabase.from('events').select('id', { count: 'exact' }),
+                supabase.from('businesses').select('id', { count: 'exact' }).eq('is_verified', false)
+            ]);
+
+            setAdminStats({
+                totalUsers: usersRes.count || 0,
+                totalBusinesses: businessesRes.count || 0,
+                totalEvents: eventsRes.count || 0,
+                pendingVerifications: verificationsRes.count || 0
+            });
+        }
+
         setLoading(false);
     };
 
@@ -78,7 +102,6 @@ export default function ProfileView() {
                 name: editName,
                 description: editDescription,
                 sector_id: editSector,
-                category_id: editCategory,
                 address: editAddress
             })
             .eq('id', business.id);
@@ -91,7 +114,6 @@ export default function ProfileView() {
                 name: editName,
                 description: editDescription,
                 sector_id: editSector,
-                category_id: editCategory,
                 address: editAddress
             });
             setIsEditing(false);
@@ -116,7 +138,6 @@ export default function ProfileView() {
             alert('Error al eliminar: ' + error.message);
         } else {
             setBusiness(null);
-            setUserType('visitor');
         }
     };
 
@@ -151,37 +172,14 @@ export default function ProfileView() {
         }
     };
 
-    const createBusinessProfile = async () => {
-        if (!user) return;
-        setLoading(true);
-
+    const verifyBusiness = async (businessId: string) => {
         const supabase = getSupabase();
-        const { data, error } = await supabase
+        await supabase
             .from('businesses')
-            .insert({
-                name: 'Mi Negocio',
-                description: 'Descripción de mi negocio',
-                sector_id: Sector.CENTRO,
-                category_id: 'bar',
-                owner_id: user.id,
-                address: 'Montañita'
-            })
-            .select()
-            .single();
+            .update({ is_verified: true })
+            .eq('id', businessId);
 
-        if (error) {
-            alert('Error creando perfil: ' + error.message);
-        } else {
-            setBusiness(data);
-            setUserType('business');
-            setEditName(data.name);
-            setEditDescription(data.description);
-            setEditSector(data.sector_id);
-            setEditCategory(data.category_id);
-            setEditAddress(data.address);
-            setIsEditing(true);
-        }
-        setLoading(false);
+        loadData();
     };
 
     if (loading) {
@@ -192,7 +190,7 @@ export default function ProfileView() {
         );
     }
 
-    if (!user) {
+    if (!user || !profile) {
         return (
             <div className="text-center py-12">
                 <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">
@@ -202,47 +200,99 @@ export default function ProfileView() {
         );
     }
 
+    const getRoleBadge = () => {
+        const badges = {
+            admin: { icon: Shield, color: 'amber', label: 'Administrador' },
+            business: { icon: Store, color: 'cyan', label: 'Negocio' },
+            visitor: { icon: User, color: 'rose', label: 'Visitante' }
+        };
+        const badge = badges[profile.role];
+        const Icon = badge.icon;
+
+        return (
+            <div
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold`}
+                style={{
+                    backgroundColor: badge.color === 'amber' ? 'rgba(245,158,11,0.2)'
+                        : badge.color === 'cyan' ? 'rgba(6,182,212,0.2)'
+                            : 'rgba(244,63,94,0.2)',
+                    color: badge.color === 'amber' ? '#f59e0b'
+                        : badge.color === 'cyan' ? '#06b6d4'
+                            : '#f43f5e'
+                }}
+            >
+                <Icon className="w-4 h-4" />
+                {badge.label}
+            </div>
+        );
+    };
+
     return (
         <div className="space-y-6">
-            {/* User Type Selector */}
+            {/* Profile Header */}
             <div className="bg-slate-900/50 rounded-3xl p-6 border border-white/5">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">
-                    Tipo de cuenta
-                </h3>
-                <div className="flex gap-4">
-                    <button
-                        onClick={() => setUserType('visitor')}
-                        className={`flex-1 p-4 rounded-2xl border-2 transition-all ${userType === 'visitor'
-                                ? 'border-rose-500 bg-rose-500/10'
-                                : 'border-slate-800 hover:border-slate-700'
-                            }`}
-                    >
-                        <User className={`w-8 h-8 mx-auto mb-2 ${userType === 'visitor' ? 'text-rose-500' : 'text-slate-500'}`} />
-                        <p className={`font-bold ${userType === 'visitor' ? 'text-white' : 'text-slate-500'}`}>Visitante</p>
-                        <p className="text-[10px] text-slate-500 mt-1">Explorar eventos y lugares</p>
-                    </button>
-                    <button
-                        onClick={() => {
-                            if (!business) {
-                                createBusinessProfile();
-                            } else {
-                                setUserType('business');
-                            }
-                        }}
-                        className={`flex-1 p-4 rounded-2xl border-2 transition-all ${userType === 'business'
-                                ? 'border-cyan-500 bg-cyan-500/10'
-                                : 'border-slate-800 hover:border-slate-700'
-                            }`}
-                    >
-                        <Store className={`w-8 h-8 mx-auto mb-2 ${userType === 'business' ? 'text-cyan-500' : 'text-slate-500'}`} />
-                        <p className={`font-bold ${userType === 'business' ? 'text-white' : 'text-slate-500'}`}>Negocio</p>
-                        <p className="text-[10px] text-slate-500 mt-1">Publicar eventos y promociones</p>
-                    </button>
+                <div className="flex items-center gap-4 mb-4">
+                    <div className="w-16 h-16 bg-gradient-to-tr from-rose-500 to-amber-500 rounded-2xl flex items-center justify-center text-2xl font-black text-white">
+                        {(profile.display_name || user.email)?.[0].toUpperCase()}
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-black text-white">
+                            {profile.display_name || user.email?.split('@')[0]}
+                        </h2>
+                        <p className="text-sm text-slate-500">{user.email}</p>
+                    </div>
                 </div>
+                {getRoleBadge()}
             </div>
 
+            {/* Admin Dashboard */}
+            {isAdmin && adminStats && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 rounded-3xl p-6 border border-amber-500/20"
+                >
+                    <div className="flex items-center gap-2 mb-4">
+                        <Shield className="w-5 h-5 text-amber-500" />
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500">
+                            Panel de Administrador
+                        </h3>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="bg-slate-900/50 rounded-2xl p-4">
+                            <Users className="w-6 h-6 text-cyan-500 mb-2" />
+                            <p className="text-2xl font-black">{adminStats.totalUsers}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Usuarios</p>
+                        </div>
+                        <div className="bg-slate-900/50 rounded-2xl p-4">
+                            <Store className="w-6 h-6 text-rose-500 mb-2" />
+                            <p className="text-2xl font-black">{adminStats.totalBusinesses}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Negocios</p>
+                        </div>
+                        <div className="bg-slate-900/50 rounded-2xl p-4">
+                            <Calendar className="w-6 h-6 text-emerald-500 mb-2" />
+                            <p className="text-2xl font-black">{adminStats.totalEvents}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Eventos</p>
+                        </div>
+                        <div className="bg-slate-900/50 rounded-2xl p-4">
+                            <Check className="w-6 h-6 text-amber-500 mb-2" />
+                            <p className="text-2xl font-black">{adminStats.pendingVerifications}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Pendientes</p>
+                        </div>
+                    </div>
+
+                    <button
+                        className="w-full py-3 bg-amber-500/20 text-amber-500 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-amber-500/30 transition-all"
+                    >
+                        <Settings className="w-5 h-5" />
+                        Gestionar Plataforma
+                    </button>
+                </motion.div>
+            )}
+
             {/* Business Profile */}
-            {userType === 'business' && business && (
+            {isBusiness && business && (
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -369,6 +419,24 @@ export default function ProfileView() {
                             </>
                         )}
                     </div>
+                </motion.div>
+            )}
+
+            {/* Visitor Message */}
+            {profile.role === 'visitor' && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-slate-900/50 rounded-3xl p-6 border border-white/5 text-center"
+                >
+                    <User className="w-12 h-12 mx-auto mb-4 text-rose-500" />
+                    <h3 className="font-bold text-white mb-2">Cuenta de Visitante</h3>
+                    <p className="text-sm text-slate-500 mb-4">
+                        Explora eventos, añade favoritos y descubre lo mejor de Montañita.
+                    </p>
+                    <p className="text-xs text-slate-600">
+                        ¿Tienes un negocio? Contacta al administrador para cambiar tu rol.
+                    </p>
                 </motion.div>
             )}
 
