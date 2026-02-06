@@ -6,25 +6,29 @@ export const SECTOR_INFO = {
         name: 'Centro',
         color: '#f43f5e', // Rose 500
         description: 'Vida nocturna y Calle de los Cócteles',
-        icon: '🔥'
+        icon: '🔥',
+        center: [-80.7533, -1.8265]
     },
     [Sector.LA_PUNTA]: {
         name: 'La Punta',
         color: '#06b6d4', // Cyan 500
         description: 'Surf, atardeceres y ambiente chill',
-        icon: '🏄'
+        icon: '🏄',
+        center: [-80.7590, -1.8210]
     },
     [Sector.TIGRILLO]: {
         name: 'El Tigrillo',
         color: '#10b981', // Emerald 500
         description: 'Yoga, bienestar y zona de silencio',
-        icon: '🧘'
+        icon: '🧘',
+        center: [-80.7522, -1.8270]
     },
     [Sector.MALECON]: {
         name: 'Malecón',
         color: '#f59e0b', // Amber 500
         description: 'Eventos públicos y ferias culturales',
-        icon: '🏖️'
+        icon: '🏖️',
+        center: [-80.7560, -1.8265]
     }
 };
 

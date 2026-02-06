@@ -10,9 +10,11 @@ import Login from '@/components/Auth/Login';
 import { useAuth } from '@/context/AuthContext';
 import { Sector, Business, MontanitaEvent } from '@/types';
 import EventList from '@/components/Events/EventList';
+import FavoritesView from '@/components/Favorites/FavoritesView';
 import { SECTOR_INFO } from '@/constants';
-import { Search, Calendar, Heart, User, Map as MapIcon, Sparkles, Check } from 'lucide-react';
+import { Search, Calendar, Heart, User, Map as MapIcon, Sparkles, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getSupabase } from '@/services/supabase';
 
 const MapView = dynamic(() => import('@/components/Map/MapView'), {
   ssr: false,
@@ -73,6 +75,7 @@ export default function Home() {
   const [rsvped, setRsvped] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('explore');
   const [showWizard, setShowWizard] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [events, setEvents] = useState<MontanitaEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,9 +120,20 @@ export default function Home() {
     });
   };
 
+  const filteredEvents = events.filter(e => {
+    const searchMatch = !searchQuery ||
+      e.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      e.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    const vibeMatch = !selectedVibe || e.vibe_tags?.includes(selectedVibe) || e.category_id?.toLowerCase().includes(selectedVibe.toLowerCase());
+    return searchMatch && vibeMatch;
+  });
+
   const filteredBusinesses = businesses.filter(b => {
+    const searchMatch = !searchQuery ||
+      b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const vibeMatch = !selectedVibe || b.category_id?.toLowerCase().includes(selectedVibe.toLowerCase());
-    return vibeMatch;
+    return searchMatch && vibeMatch;
   });
 
   return (
@@ -153,8 +167,18 @@ export default function Home() {
           <input
             type="text"
             placeholder="¿Qué buscas hoy?"
-            className="w-full bg-slate-900/50 border border-slate-800/50 rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/50 transition-all backdrop-blur-sm"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-slate-900/50 border border-slate-800/50 rounded-2xl py-4 pl-12 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/50 transition-all backdrop-blur-sm"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 bg-slate-800 rounded-full"
+            >
+              <X className="w-3 h-3 text-slate-400" />
+            </button>
+          )}
         </div>
       </header>
 
@@ -182,7 +206,7 @@ export default function Home() {
                 En Vivo Ahora
               </h2>
               <EventList
-                events={events}
+                events={filteredEvents}
                 rsvped={rsvped}
                 onToggleRSVP={toggleRSVP}
                 loading={loading}
@@ -228,6 +252,23 @@ export default function Home() {
             className="px-4"
           >
             <CalendarView />
+          </motion.div>
+        )}
+
+        {activeTab === 'favorites' && (
+          <motion.div
+            key="favorites"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="px-6"
+          >
+            <FavoritesView
+              events={events}
+              rsvpedIds={rsvped}
+              onToggleRSVP={toggleRSVP}
+              loading={loading}
+            />
           </motion.div>
         )}
 

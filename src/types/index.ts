@@ -47,6 +47,11 @@ export interface MontanitaEvent {
     is_recurring: boolean;
     rrule?: string;
     interested_count: number;
+    businesses?: {
+        name: string;
+        is_verified: boolean;
+        image_url: string;
+    };
 }
 
 export type Vibe = 'Adrenalina' | 'Relax' | 'Techno' | 'Familia' | 'Wellness' | 'Fiesta';

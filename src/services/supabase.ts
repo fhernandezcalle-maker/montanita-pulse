@@ -25,7 +25,17 @@ export const supabaseApi = {
         if (sectorId) {
             query = query.eq('sector_id', sectorId);
         }
-        return query.order('name');
+        const { data, error } = await query.order('name');
+
+        const mappedData = data?.map(b => ({
+            ...b,
+            location: {
+                lat: b.location_lat,
+                lng: b.location_lng
+            }
+        }));
+
+        return { data: mappedData as Business[], error };
     },
 
     async getEvents(sectorId: Sector | null) {

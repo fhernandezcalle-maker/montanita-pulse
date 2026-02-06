@@ -58,18 +58,28 @@ export default function EventList({ events, rsvped, onToggleRSVP, loading }: Eve
                         <div>
                             <div className="flex items-center gap-2">
                                 <h4 className="font-bold text-base text-white">{event.title}</h4>
+                                {event.businesses?.is_verified && (
+                                    <div className="bg-cyan-500 rounded-full p-0.5">
+                                        <Check className="w-2.5 h-2.5 text-white" />
+                                    </div>
+                                )}
                                 {event.interested_count > 10 && (
                                     <span className="text-[9px] font-black bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded-full uppercase tracking-tighter">
                                         🔥 Top
                                     </span>
                                 )}
                             </div>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                                {event.businesses && (
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                                        {event.businesses.name}
+                                    </span>
+                                )}
                                 <div className="flex items-center gap-1 text-[10px] text-slate-400 font-bold uppercase">
                                     <Clock className="w-3 h-3" />
                                     {format(new Date(event.start_at), "HH:mm 'hs'", { locale: es })}
                                 </div>
-                                <span className="w-1 h-1 rounded-full bg-slate-700" />
+                                <span className="w-1 h-1 rounded-full bg-slate-700 hidden sm:block" />
                                 <span className="text-[10px] text-rose-500 font-black uppercase tracking-widest">
                                     {event.interested_count + (rsvped.includes(event.id) ? 1 : 0)} asistiendo
                                 </span>
